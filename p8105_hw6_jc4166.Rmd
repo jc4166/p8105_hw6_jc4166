@@ -5,26 +5,110 @@ date: "11/21/2019"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
+```{r, include = FALSE, warning = FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+library(readxl)
+library(haven)
+library(plotly)
+library(viridis)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+## Problem 1
+Read in and clean birthweight data.
+```{r, include = FALSE, warning = FALSE, message = FALSE}
+birthweight_data = read_csv(file = "./data/birthweight.csv") %>% 
+  #clean variable names
+  janitor::clean_names() %>% 
+  #drop any missing data
+  drop_na() %>% 
+  #convert to factor variable where appropriate (babysex, frace, malform, mrace)
+  mutate(babysex = as.factor(babysex),
+         frace = as.factor(frace),
+         malform = as.factor(malform),
+         mrace = as.factor(mrace)
+         ) %>% 
+  mutate(babysex = recode(babysex,
+        '1' = "male", 
+        '2' = "female")
+        ) %>% 
+  mutate(mrace = recode(mrace,
+        '1' = "white", 
+        '2' = "black", 
+        '3' = "asian", 
+        '4' = "puerto rican",
+        '8' = "other")
+        ) %>% 
+  mutate(frace = recode(frace,
+        '1' = "white", 
+        '2' = "black", 
+        '3' = "asian", 
+        '4' = "puerto rican",
+        '8' = "other",
+        '9' = "unknown")
+        ) %>% 
+  mutate(malform = recode(malform,
+        '0' = "absent", 
+        '1' = "present")
+        ) %>% 
+  mutate_if(is.numeric, round, 2)
 ```
 
-## Including Plots
+### Propose a regression model for birthweight.
+The ouctome is birthweight (bwt).  
+The potential predictors are:  
 
-You can also embed plots, for example:
+Maternal Factors:  
+- mrace: mother’s race  
+- menarche: mother’s age at menarche  
+- mheight: mother’s height  
+- momage: mother’s age at delivery  
+- ppbmi: mother’s pre-pregnancy BMI  
+- ppwt: mother’s pre-pregnancy weight  
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+Pregnancy Factors:  
+- gaweeks: gestational age in weeks  
+- delwt: mother’s weight at delivery (pounds)  
+- smoken: average number of cigarettes smoked per day during pregnancy  
+- wtgain: mother’s weight gain during pregnancy  
+
+Pregnancy History Factors:  
+- parity: number of live births prior to this pregnancy  
+- pnumlbw: previous number of low birth weight babies  
+- pnumsga: number of prior small for gestational age babies  
+
+Other Family Factors:  
+- fincome: family monthly income   
+- frace: father’s race  
+
+Baby Factors:  
+- malform: presence of malformations that could affect weight  
+
+mrace  
+menarche
+mheight
+momage
+ppbmi
+ppwt
+gaweeks 
+delwt
+smoken
+wtgain
+parity
+pnumlbw
+pnumsga
+fincome 
+frace
+malform
+
+```{r}
+birthweight_model_1 = lm(bwt ~ mrace + menarche + mheight + momage + ppbmi + ppwt + gaweeks + delwt + smoken + wtgain + parity + pnumlbw + pnumsga + fincome + frace + malform, data = birthweight_data)
+
+birthweight_model_1 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3, caption = "Regression Summary (Model 1)")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
