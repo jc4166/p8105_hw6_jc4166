@@ -13,6 +13,12 @@ library(readxl)
 library(haven)
 library(plotly)
 library(viridis)
+library(modelr)
+library(broom)
+library(purrr)
+library(mgcv)
+
+set.seed(1)
 ```
 
 ## Problem 1
@@ -57,7 +63,7 @@ birthweight_data = read_csv(file = "./data/birthweight.csv") %>%
 
 ### Propose a regression model for birthweight.
 The ouctome is birthweight (bwt).  
-The potential predictors are:  
+The potential predictors (i.e. all the variables collected) are:  
 
 Maternal Factors:  
 - mrace: mother’s race  
@@ -85,25 +91,10 @@ Other Family Factors:
 Baby Factors:  
 - malform: presence of malformations that could affect weight  
 
-mrace  
-menarche
-mheight
-momage
-ppbmi
-ppwt
-gaweeks 
-delwt
-smoken
-wtgain
-parity
-pnumlbw
-pnumsga
-fincome 
-frace
-malform
+Based on my experience as a clinician, I propose a model in which low birthweight can be predicted by gestational age in weeks, mother's smoking status, history of previous low birth weight babies, income, and presence of malformations that could affect weight.  
 
-```{r}
-birthweight_model_1 = lm(bwt ~ mrace + menarche + mheight + momage + ppbmi + ppwt + gaweeks + delwt + smoken + wtgain + parity + pnumlbw + pnumsga + fincome + frace + malform, data = birthweight_data)
+```{r, warning = FALSE, message = FALSE}
+birthweight_model_1 = lm(bwt ~ gaweeks + smoken + pnumlbw + fincome + malform, data = birthweight_data)
 
 birthweight_model_1 %>% 
   broom::tidy() %>% 
@@ -111,4 +102,79 @@ birthweight_model_1 %>%
   knitr::kable(digits = 3, caption = "Regression Summary (Model 1)")
 ```
 
+```{r, warning = FALSE, message = FALSE}
+birthweight_data %>% 
+  modelr::add_residuals(birthweight_model_1) %>%
+  modelr::add_predictions(birthweight_model_1) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+    geom_point(alpha = 0.5) + 
+    geom_hline(yintercept = 0, color = "blue") + 
+    labs(
+      title = "Model Residuals vs. Fitted Values",
+      x = "Fitted Values",
+      y = "Residuals"
+   )
+```
 
+Compare your model to two others:  
+Model 2: Using length at birth and gestational age as predictors (main effects only)  
+
+```{r, warning = FALSE, message = FALSE} 
+birthweight_model_2 = lm(bwt ~ gaweeks + blength, data = birthweight_data)
+
+birthweight_model_2 %>% 
+  broom::glance()  %>%
+  knitr::kable(caption = "Regression Summary (Model 2)")
+```
+
+Model 3: Using head circumference, length, sex, and all interactions (including the three-way interaction) between these  
+```{r, warning = FALSE, message = FALSE}
+birthweight_model_3 = lm(bwt ~ bhead + blength + babysex + bhead * blength + bhead * babysex + blength * babysex + bhead * blength * babysex, data = birthweight_data)
+
+birthweight_model_3 %>% 
+  broom::glance()  %>%
+  knitr::kable(caption = "Regression Summary (Model 3)")
+```
+
+Make the comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+```{r, warning = FALSE, message = FALSE}
+cv_birthweight_models =
+  crossv_mc(birthweight_data, 100) %>%
+    mutate( 
+      train = map(train, as_tibble),
+      test = map(test, as_tibble)
+    )
+```
+
+```{r, warning = FALSE, message = FALSE}
+cv_birthweight_models = cv_birthweight_models %>%
+  mutate(
+      birthweight_model_1  = map(train, ~lm(bwt ~ gaweeks + bhead + blength + smoken + fincome + pnumlbw, data = .x)),
+      birthweight_model_2  = map(train, ~lm(bwt ~ gaweeks + blength, data = .x)),
+      birthweight_model_3  = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead * blength + bhead * babysex + blength * babysex + bhead * blength * babysex, data = as_tibble(.x)))
+      ) %>% 
+    mutate(
+      rmse_birthweight_model_1 = map2_dbl(birthweight_model_1, test, ~rmse(model = .x, data = .y)),
+      rmse_birthweight_model_2   = map2_dbl(birthweight_model_2, test, ~rmse(model = .x, data = .y)),
+      rmse_birthweight_model_3 = map2_dbl(birthweight_model_3, test, ~rmse(model = .x, data = .y))
+      )
+```
+
+```{r, warning = FALSE, message = FALSE}
+cv_birthweight_models %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+    geom_violin(aes(fill = model, color = model)) +
+    labs(
+    title = "Distribution of RMSE Values (Regression Models 1, 2, 3)",
+      x = "Regression Model",
+      y = "RMSE")
+```
+
+Model 1 has the lowest prediction error of the three models (though model 3 is close).
